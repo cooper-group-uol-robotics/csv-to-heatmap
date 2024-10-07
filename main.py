@@ -62,8 +62,8 @@ def plot_heatmap_from_csv(csv_file, fill_value=None):
 
 
 def plot_heatmaps_in_directory(fill_value=None):
-    # Use the current working directory
-    directory = os.getcwd()
+    # Use the directory where the .csv files are saved
+    directory = "C:/Users/sgcshiel/Documents/Project_work/Crystal plates/csvs_to_convert"
 
     # Walk through the directory and process each CSV file
     for root, _, files in os.walk(directory):
