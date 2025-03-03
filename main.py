@@ -2,76 +2,113 @@ import pandas as pd
 import seaborn as sns
 import matplotlib.pyplot as plt
 import os
+import logging
 
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
 
-def plot_heatmap_from_csv(csv_file, fill_value=None):
-    # Read the CSV file into a DataFrame
-    df = pd.read_csv(csv_file)
+def calculate_score_percentage(df):
+    """Calculates the percentage of each score in the DataFrame."""
+    score_counts = df['score'].value_counts(normalize=True) * 100
+    return score_counts
 
-    # Handle missing score values
-    if fill_value is not None:
-        df['Score'].fillna(fill_value, inplace=True)  # Fill missing scores with the specified value
-    else:
-        df.dropna(subset=['Score'], inplace=True)  # Drop rows where 'score' is NaN
+def plot_heatmap_from_csv(csv_file, fill_value=None, font_type='Arial', font_size=22, cmap='flare'):
+    try:
+        # Read the CSV file into a DataFrame
+        df = pd.read_csv(csv_file)
 
-    # Group by 'Well' and get the maximum score for each well, rounding to nearest whole number
-    df_max = df.groupby('Well', as_index=False)['Score'].max().round()
+        # Normalize column names to lowercase
+        df.columns = df.columns.str.lower()
 
-    # Extract row and column information from well labels
-    df_max['row'] = df_max['Well'].str.extract('([A-H])')[0]
-    df_max['column'] = df_max['Well'].str.extract('(\d+)')[0].astype(int)
+        # Validate the presence of required columns
+        if 'well' not in df.columns or 'score' not in df.columns:
+            logging.error(f"Missing 'well' or 'score' column in {csv_file}.")
+            return
 
-    # Pivot the DataFrame for the 96-well format
-    pivot_table = df_max.pivot(index='row', columns='column', values='Score')
+        # Handle missing score values
+        if fill_value is not None:
+            df['score'].fillna(fill_value, inplace=True)  # Fill missing scores
+        else:
+            df.dropna(subset=['score'], inplace=True)  # Drop rows where 'score' is NaN
 
-    # Set the correct order for rows (A to H) and columns (1 to 12)
-    pivot_table = pivot_table.reindex(index=['A', 'B', 'C', 'D', 'E', 'F',],
-                                      columns=range(1, 13))
+        # Group by 'well' and get the maximum score
+        df_max = df.groupby('well', as_index=False)['score'].max().round()
 
-    # Extract the title from the CSV file name (without extension)
-    title = os.path.splitext(os.path.basename(csv_file))[0]
+        # Extract row and column information from well labels
+        df_max['row'] = df_max['well'].str.extract('([A-H])')[0]
+        df_max['column'] = df_max['well'].str.extract('(\d+)')[0].astype(int)
 
-    # Create the heatmap with adjusted scale
-    plt.figure(figsize=(10, 8))
-    ax = sns.heatmap(pivot_table, annot=True, fmt=".0f", cmap='flare',
-                     cbar_kws={'label': 'Score', 'ticks': [1.0, 2.0, 3.0, 4.0]},
-                     vmin=1.0, vmax=4.0,
-                     annot_kws={'size': 12})  # Change this value to adjust annotation size
+        # Pivot the DataFrame for the 96-well format
+        pivot_table = df_max.pivot(index='row', columns='column', values='score')
 
-    # Move the column labels to the top
-    ax.xaxis.set_ticks_position('top')
-    ax.xaxis.set_label_position('top')
+        # Drop rows and columns that are completely empty
+        pivot_table = pivot_table.dropna(how='all').dropna(axis=1, how='all')
 
-    # Adjust colorbar label size using set_ylabel method
-    cbar = ax.collections[0].colorbar
-    cbar.ax.set_ylabel('Score', fontsize=14)  # Set colorbar label size
+        # Set the correct order for rows and columns
+        pivot_table = pivot_table.reindex(index=['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'],
+                                          columns=range(1, 13), fill_value=None)
 
-    plt.title(f'Heatmap for {title}', fontsize=14, pad=20)  # Increase pad to move title up
-    plt.xlabel('Column', fontsize=14, labelpad=15)  # Increase labelpad for x-axis
-    plt.ylabel('Row', fontsize=14, labelpad=15)  # Increase labelpad for y-axis
-    plt.xticks(rotation=0, fontsize=12)  # Change x-tick font size
-    plt.yticks(rotation=0, fontsize=12)  # Change y-tick font size
+        # Check if the pivot table has any data before plotting
+        if pivot_table.empty:
+            logging.warning(f'No data available to plot for {csv_file}.')
+            return
 
-    # Adjust layout to prevent title cut-off
-    plt.tight_layout()
+        # Calculate the percentage of each score
+        score_percentage = calculate_score_percentage(df_max)
+        logging.info(f"Score percentage for {csv_file}:")
+        logging.info(score_percentage)
 
-    # Save the heatmap to a file in the same directory as the CSV file
-    output_file_path = os.path.join(os.path.dirname(csv_file), f'{title}.png')
-    plt.savefig(output_file_path)  # Save the figure
-    plt.close()  # Close the plot to free memory
+        # Extract the title from the CSV file name
+        title = os.path.splitext(os.path.basename(csv_file))[0]
 
+        # Create the heatmap with wider aspect ratio
+        plt.figure(figsize=(13.5, 8))  # Adjusted figsize for wider output
+        ax = sns.heatmap(pivot_table, annot=True, fmt=".0f", cmap=cmap,
+                         cbar_kws={'label': 'Score', 'ticks': [0.0, 1.0, 2.0, 3.0,]},
+                         vmin=0.0, vmax=4.0,
+                         annot_kws={'size': font_size})
 
-def plot_heatmaps_in_directory(fill_value=None):
-    # Use the directory where the .csv files are saved
-    directory = "C:/Users/sgcshiel/Documents/Project_work/Crystal plates/csvs_to_convert"
+        # Move the column labels to the top
+        ax.xaxis.set_ticks_position('top')
+        ax.xaxis.set_label_position('top')
+
+        # Adjust colorbar label size
+        cbar = ax.collections[0].colorbar
+        cbar.ax.set_ylabel('Score', fontsize=font_size)
+
+        plt.title(f'Heatmap for {title}', fontsize=font_size, pad=20)
+        plt.xlabel('Column', fontsize=font_size, labelpad=15)
+        plt.ylabel('Row', fontsize=font_size, labelpad=15)
+        plt.xticks(rotation=0, fontsize=font_size)
+        plt.yticks(rotation=0, fontsize=font_size)
+
+        # Set font type
+        plt.rc('font', family=font_type)
+
+        plt.tight_layout()
+
+        # Save the heatmap
+        output_file_path = os.path.join(os.path.dirname(csv_file), f'{title}.png')
+        plt.savefig(output_file_path, dpi=500)
+        plt.close()
+        logging.info(f'Saved heatmap to {output_file_path}')
+    
+    except Exception as e:
+        logging.error(f"Error processing {csv_file}: {e}")
+
+def plot_heatmaps_in_directory(fill_value=None, font_type='Arial', font_size=22, cmap='flare'):
+    directory = "" # add directory path
 
     # Walk through the directory and process each CSV file
     for root, _, files in os.walk(directory):
         for file in files:
             if file.endswith('.csv'):
                 csv_file_path = os.path.join(root, file)
-                print(f'Processing {csv_file_path}...')
-                plot_heatmap_from_csv(csv_file_path, fill_value)
+                logging.info(f'Processing {csv_file_path}...')
+                plot_heatmap_from_csv(csv_file_path, fill_value, font_type, font_size, cmap)
+
+# Example usage
+plot_heatmaps_in_directory(font_type='Arial', font_size=22, cmap='flare')
 
 
 # Example usage
